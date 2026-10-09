@@ -15,6 +15,7 @@ BRICK_COLORS = [
     (80, 140, 200),
 ]
 
+
 class GameEngine:
     def __init__(self, width, height):
         self.width = width
@@ -60,33 +61,96 @@ class GameEngine:
         if keys[pygame.K_RIGHT] or keys[pygame.K_d]:
             self.paddle.move(self.paddle.speed, self.width)
 
+    def _resolve_ball_collision(self, target_rect, previous_ball_rect):
+        """Resolve a ball/rectangle collision using the side of entry.
+
+        The ball is represented by an axis-aligned rectangle for collision
+        detection. Its previous rectangle helps distinguish a side hit from
+        a top/bottom hit. A minimum-penetration fallback handles corner or
+        already-overlapping cases and moves the ball out of the target.
+        """
+        current_ball_rect = self.ball.rect()
+        if not current_ball_rect.colliderect(target_rect):
+            return False
+
+        radius = self.ball.radius
+
+        # The ball crossed the top or bottom edge of the target.
+        if previous_ball_rect.bottom <= target_rect.top and self.ball.vy > 0:
+            self.ball.y = target_rect.top - radius
+            self.ball.vy = -abs(self.ball.vy)
+        elif previous_ball_rect.top >= target_rect.bottom and self.ball.vy < 0:
+            self.ball.y = target_rect.bottom + radius
+            self.ball.vy = abs(self.ball.vy)
+
+        # The ball crossed the left or right edge of the target.
+        elif previous_ball_rect.right <= target_rect.left and self.ball.vx > 0:
+            self.ball.x = target_rect.left - radius
+            self.ball.vx = -abs(self.ball.vx)
+        elif previous_ball_rect.left >= target_rect.right and self.ball.vx < 0:
+            self.ball.x = target_rect.right + radius
+            self.ball.vx = abs(self.ball.vx)
+
+        else:
+            # Fallback for corner impacts or an overlap that already existed.
+            overlap_left = current_ball_rect.right - target_rect.left
+            overlap_right = target_rect.right - current_ball_rect.left
+            overlap_top = current_ball_rect.bottom - target_rect.top
+            overlap_bottom = target_rect.bottom - current_ball_rect.top
+            penetration_x = min(overlap_left, overlap_right)
+            penetration_y = min(overlap_top, overlap_bottom)
+
+            if penetration_x < penetration_y:
+                if self.ball.x < target_rect.centerx:
+                    self.ball.x = target_rect.left - radius
+                    self.ball.vx = -abs(self.ball.vx)
+                else:
+                    self.ball.x = target_rect.right + radius
+                    self.ball.vx = abs(self.ball.vx)
+            else:
+                if self.ball.y < target_rect.centery:
+                    self.ball.y = target_rect.top - radius
+                    self.ball.vy = -abs(self.ball.vy)
+                else:
+                    self.ball.y = target_rect.bottom + radius
+                    self.ball.vy = abs(self.ball.vy)
+
+        return True
+
     def update(self):
         if self.game_over:
             return
 
+        # Keep the previous position to determine which side is struck.
+        previous_ball_rect = self.ball.rect()
         self.ball.move()
 
-        if self.ball.x - self.ball.radius <= 0 or self.ball.x + self.ball.radius >= self.width:
-            self.ball.vx *= -1
+        # Resolve side-wall collisions and clamp the ball inside the window
+        # so it cannot repeatedly reverse while already beyond a wall.
+        if self.ball.x - self.ball.radius <= 0:
+            self.ball.x = self.ball.radius
+            if self.ball.vx < 0:
+                self.ball.vx = abs(self.ball.vx)
+        elif self.ball.x + self.ball.radius >= self.width:
+            self.ball.x = self.width - self.ball.radius
+            if self.ball.vx > 0:
+                self.ball.vx = -abs(self.ball.vx)
+
         if self.ball.y - self.ball.radius <= 0:
-            self.ball.vy *= -1
+            self.ball.y = self.ball.radius
+            if self.ball.vy < 0:
+                self.ball.vy = abs(self.ball.vy)
 
-        if self.ball.rect().colliderect(self.paddle.rect()):
-            # NOTE: always flips the ball's vertical velocity on a
-            # paddle collision, regardless of which side of the paddle
-            # was actually hit. See Task 1 in the README.
-            self.ball.vy *= -1
+        # Resolve the paddle collision from the actual side of impact.
+        self._resolve_ball_collision(self.paddle.rect(), previous_ball_rect)
 
+        # Destroy at most one brick per frame, and only score once per brick.
         for brick in self.bricks:
-            if brick.alive and self.ball.rect().colliderect(brick.rect()):
+            if brick.alive and self._resolve_ball_collision(
+                brick.rect(), previous_ball_rect
+            ):
                 brick.alive = False
                 self.score += 1
-                # NOTE: same unconditional vertical-velocity flip as
-                # the paddle collision above - a brick hit from the
-                # left or right should redirect the ball sideways
-                # (flip vx), but this always flips vy instead. See
-                # Task 1 in the README.
-                self.ball.vy *= -1
                 break
 
         if self.ball.y - self.ball.radius > self.height:
@@ -123,7 +187,7 @@ class GameEngine:
         screen.blit(lives_text, (self.width - 130, 10))
 
         if self.game_over and not getattr(self, "_game_over_logged", False):
-            # NOTE: no proper end screen yet - see Task 2 in the README.
+            # Task 2 will replace terminal output with an in-game end screen.
             if self.result == "win":
                 print("You win! Final score:", self.score)
             else:
