@@ -1,3 +1,8 @@
+import io
+import math
+import struct
+import wave
+
 import pygame
 from .paddle import Paddle
 from .ball import Ball
@@ -43,6 +48,67 @@ class GameEngine:
         self.difficulty = "Medium"
         self.ball_speed = 4
         self.paddle_width = 100
+
+        # Task 4: generate simple sound effects in memory. Audio is optional;
+        # the game must continue to work if the mixer/device is unavailable.
+        self.sounds = {}
+        self._init_sounds()
+
+    def _init_sounds(self):
+        """Create short WAV sound effects without external audio assets."""
+        try:
+            if pygame.mixer.get_init() is None:
+                pygame.mixer.init(frequency=22050, size=-16, channels=1, buffer=512)
+
+            self.sounds = {
+                "wall": self._make_tone([(520, 0.045)], volume=0.18),
+                "paddle": self._make_tone([(680, 0.065)], volume=0.22),
+                "brick": self._make_tone([(850, 0.045), (1100, 0.055)], volume=0.24),
+                "win": self._make_tone(
+                    [(523, 0.09), (659, 0.09), (784, 0.13)], volume=0.24
+                ),
+                "lose": self._make_tone(
+                    [(440, 0.10), (330, 0.12), (220, 0.18)], volume=0.22
+                ),
+            }
+        except (pygame.error, OSError, ValueError):
+            # Some computers have no available audio device; silence is safer
+            # than preventing the game from launching.
+            self.sounds = {}
+
+    def _make_tone(self, notes, volume=0.2, sample_rate=22050):
+        """Build a small mono 16-bit WAV sound in memory."""
+        pcm = bytearray()
+        for frequency, duration in notes:
+            count = max(1, int(sample_rate * duration))
+            for index in range(count):
+                # Fade each note at both ends to reduce clicks.
+                envelope = min(1.0, index / 180.0, (count - index) / 180.0)
+                sample = int(
+                    32767 * volume * max(0.0, envelope)
+                    * math.sin(2.0 * math.pi * frequency * index / sample_rate)
+                )
+                pcm.extend(struct.pack("<h", sample))
+
+        wav_bytes = io.BytesIO()
+        with wave.open(wav_bytes, "wb") as wav_file:
+            wav_file.setnchannels(1)
+            wav_file.setsampwidth(2)
+            wav_file.setframerate(sample_rate)
+            wav_file.writeframes(bytes(pcm))
+
+        wav_bytes.seek(0)
+        return pygame.mixer.Sound(file=wav_bytes)
+
+    def _play_sound(self, name):
+        """Play an effect if audio initialized successfully."""
+        sound = self.sounds.get(name)
+        if sound is not None:
+            try:
+                sound.play()
+            except pygame.error:
+                # Continue gameplay even if the audio device fails mid-game.
+                pass
 
     def _build_bricks(self, rows, cols):
         bricks = []
@@ -176,22 +242,27 @@ class GameEngine:
 
         # Resolve side-wall collisions and clamp the ball inside the window
         # so it cannot repeatedly reverse while already beyond a wall.
+        # Play a wall effect only when the ball is travelling into a wall.
         if self.ball.x - self.ball.radius <= 0:
             self.ball.x = self.ball.radius
             if self.ball.vx < 0:
                 self.ball.vx = abs(self.ball.vx)
+                self._play_sound("wall")
         elif self.ball.x + self.ball.radius >= self.width:
             self.ball.x = self.width - self.ball.radius
             if self.ball.vx > 0:
                 self.ball.vx = -abs(self.ball.vx)
+                self._play_sound("wall")
 
         if self.ball.y - self.ball.radius <= 0:
             self.ball.y = self.ball.radius
             if self.ball.vy < 0:
                 self.ball.vy = abs(self.ball.vy)
+                self._play_sound("wall")
 
         # Resolve the paddle collision from the actual side of impact.
-        self._resolve_ball_collision(self.paddle.rect(), previous_ball_rect)
+        if self._resolve_ball_collision(self.paddle.rect(), previous_ball_rect):
+            self._play_sound("paddle")
 
         # Destroy at most one brick per frame, and only score once per brick.
         for brick in self.bricks:
@@ -200,6 +271,7 @@ class GameEngine:
             ):
                 brick.alive = False
                 self.score += 1
+                self._play_sound("brick")
                 break
 
         if self.ball.y - self.ball.radius > self.height:
@@ -207,12 +279,14 @@ class GameEngine:
             if self.lives <= 0:
                 self.game_over = True
                 self.result = "lose"
+                self._play_sound("lose")
             else:
                 self._reset_ball()
 
-        if all(not b.alive for b in self.bricks):
+        if not self.game_over and all(not b.alive for b in self.bricks):
             self.game_over = True
             self.result = "win"
+            self._play_sound("win")
 
     def _reset_ball(self):
         self.ball.x, self.ball.y = self.width // 2, self.height - 50
