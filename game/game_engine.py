@@ -32,6 +32,9 @@ class GameEngine:
         self.lives = 3
         self.score = 0
         self.font = pygame.font.SysFont("Arial", 28)
+        self.end_title_font = pygame.font.SysFont("Arial", 48, bold=True)
+        self.end_score_font = pygame.font.SysFont("Arial", 32, bold=True)
+        self.end_hint_font = pygame.font.SysFont("Arial", 22)
         self.game_over = False
         self.result = None  # "win" or "lose"
 
@@ -186,10 +189,38 @@ class GameEngine:
         lives_text = self.font.render(f"Lives: {self.lives}", True, WHITE)
         screen.blit(lives_text, (self.width - 130, 10))
 
-        if self.game_over and not getattr(self, "_game_over_logged", False):
-            # Task 2 will replace terminal output with an in-game end screen.
+        # Task 2: display the result inside the game window rather than
+        # printing it to the terminal. update() and handle_input() already
+        # stop normal gameplay once game_over becomes True.
+        if self.game_over:
+            overlay = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
+            overlay.fill((5, 8, 16, 220))
+            screen.blit(overlay, (0, 0))
+
             if self.result == "win":
-                print("You win! Final score:", self.score)
+                title = "YOU WIN!"
+                title_color = (100, 235, 130)
             else:
-                print("Game over! Final score:", self.score)
-            self._game_over_logged = True
+                title = "GAME OVER"
+                title_color = (255, 105, 105)
+
+            title_surface = self.end_title_font.render(title, True, title_color)
+            score_surface = self.end_score_font.render(
+                f"Final Score: {self.score}", True, WHITE
+            )
+            hint_surface = self.end_hint_font.render(
+                "Close the window to exit", True, (210, 215, 225)
+            )
+
+            screen.blit(
+                title_surface,
+                title_surface.get_rect(center=(self.width // 2, self.height // 2 - 55)),
+            )
+            screen.blit(
+                score_surface,
+                score_surface.get_rect(center=(self.width // 2, self.height // 2 + 5)),
+            )
+            screen.blit(
+                hint_surface,
+                hint_surface.get_rect(center=(self.width // 2, self.height // 2 + 55)),
+            )
