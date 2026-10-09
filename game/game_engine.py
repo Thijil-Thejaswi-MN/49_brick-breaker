@@ -35,8 +35,14 @@ class GameEngine:
         self.end_title_font = pygame.font.SysFont("Arial", 48, bold=True)
         self.end_score_font = pygame.font.SysFont("Arial", 32, bold=True)
         self.end_hint_font = pygame.font.SysFont("Arial", 22)
+        self.menu_font = pygame.font.SysFont("Arial", 20)
         self.game_over = False
         self.result = None  # "win" or "lose"
+
+        # Task 3: default to Medium for the first game.
+        self.difficulty = "Medium"
+        self.ball_speed = 4
+        self.paddle_width = 100
 
     def _build_bricks(self, rows, cols):
         bricks = []
@@ -51,9 +57,49 @@ class GameEngine:
         return bricks
 
     def handle_event(self, event):
-        # This game only needs continuously-held-key input for the
-        # paddle, handled in handle_input each frame.
-        pass
+        """Handle end-screen choices without changing normal paddle input."""
+        if not self.game_over or event.type != pygame.KEYDOWN:
+            return
+
+        key = event.key
+        if key in (pygame.K_1, pygame.K_e):
+            self._start_new_game("Easy")
+        elif key in (pygame.K_2, pygame.K_m):
+            self._start_new_game("Medium")
+        elif key in (pygame.K_3, pygame.K_h):
+            self._start_new_game("Hard")
+        elif key in (pygame.K_4, pygame.K_q, pygame.K_ESCAPE):
+            # main.py already handles pygame.QUIT, so post that event to
+            # close through the existing application event loop.
+            pygame.event.post(pygame.event.Event(pygame.QUIT))
+
+    def _start_new_game(self, difficulty):
+        """Reset all gameplay state and apply the chosen difficulty."""
+        settings = {
+            "Easy": {"ball_speed": 3, "paddle_width": 120},
+            "Medium": {"ball_speed": 4, "paddle_width": 100},
+            "Hard": {"ball_speed": 6, "paddle_width": 80},
+        }
+        selected = settings[difficulty]
+        self.difficulty = difficulty
+        self.ball_speed = selected["ball_speed"]
+        self.paddle_width = selected["paddle_width"]
+
+        # Restore a centered paddle with the selected size.
+        self.paddle.width = self.paddle_width
+        self.paddle.x = (self.width - self.paddle.width) // 2
+        self.paddle.y = self.height - 30
+
+        # Recreate the ball and all bricks, and reset round counters.
+        self.ball.x = self.width // 2
+        self.ball.y = self.height - 50
+        self.ball.vx = self.ball_speed
+        self.ball.vy = -self.ball_speed
+        self.bricks = self._build_bricks(self.rows, self.cols)
+        self.lives = 3
+        self.score = 0
+        self.game_over = False
+        self.result = None
 
     def handle_input(self):
         if self.game_over:
@@ -170,7 +216,7 @@ class GameEngine:
 
     def _reset_ball(self):
         self.ball.x, self.ball.y = self.width // 2, self.height - 50
-        self.ball.vx, self.ball.vy = 4, -4
+        self.ball.vx, self.ball.vy = self.ball_speed, -self.ball_speed
 
     def render(self, screen):
         screen.fill(BG)
@@ -208,19 +254,30 @@ class GameEngine:
             score_surface = self.end_score_font.render(
                 f"Final Score: {self.score}", True, WHITE
             )
-            hint_surface = self.end_hint_font.render(
-                "Close the window to exit", True, (210, 215, 225)
+            difficulty_surface = self.menu_font.render(
+                "Replay: 1/E Easy    2/M Medium    3/H Hard",
+                True,
+                (210, 215, 225),
+            )
+            quit_surface = self.menu_font.render(
+                "Quit: 4 / Q / Esc",
+                True,
+                (210, 215, 225),
             )
 
             screen.blit(
                 title_surface,
-                title_surface.get_rect(center=(self.width // 2, self.height // 2 - 55)),
+                title_surface.get_rect(center=(self.width // 2, self.height // 2 - 100)),
             )
             screen.blit(
                 score_surface,
-                score_surface.get_rect(center=(self.width // 2, self.height // 2 + 5)),
+                score_surface.get_rect(center=(self.width // 2, self.height // 2 - 40)),
             )
             screen.blit(
-                hint_surface,
-                hint_surface.get_rect(center=(self.width // 2, self.height // 2 + 55)),
+                difficulty_surface,
+                difficulty_surface.get_rect(center=(self.width // 2, self.height // 2 + 20)),
+            )
+            screen.blit(
+                quit_surface,
+                quit_surface.get_rect(center=(self.width // 2, self.height // 2 + 55)),
             )
